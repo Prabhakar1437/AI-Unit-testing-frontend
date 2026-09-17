@@ -318,17 +318,32 @@ export default function AnalyzePage() {
 
         // Only block navigation for infrastructure failures — not for suites that ran and had failing tests.
         if (!response.ok) {
-          const details = [data.message, data.environment?.message, data.stderr]
+          const details = [
+            data.message,
+            data.environment?.message,
+            data.stderr,
+          ]
             .filter(Boolean)
             .join(' ');
-          throw new Error(details || 'Could not run tests.');
+
+          throw new Error(
+            details || 'Could not execute the test command.'
+          );
         }
 
-        if (data.phase && data.phase !== 'completed') {
-          throw new Error(data.message || 'Tests did not complete successfully.');
+        if (data.phase !== 'completed' || !data.summary) {
+          throw new Error(
+            data.message ||
+              'The test run did not produce a completed report.'
+          );
         }
 
-        sessionStorage.setItem('lastRunResults', JSON.stringify(data.summary));
+        // Store reports even if tests failed.
+        sessionStorage.setItem(
+          'lastRunResults',
+          JSON.stringify(data.summary)
+        );
+
         router.push('/results');
     } catch (err: any) {
       setError(err?.message || 'Could not run tests.');

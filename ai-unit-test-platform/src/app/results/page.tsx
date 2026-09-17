@@ -52,85 +52,85 @@ interface TestSummary {
   failed: number;
   skipped: number;
   coverage: number | null;
-  coverageDetails?: CoverageDetails | null;
+  coverageDetails: CoverageDetails | null;
   executionTime: number;
   failures: FailedTest[];
 }
 
-const MOCK_SUMMARY: TestSummary = {
-  total: 42,
-  passed: 36,
-  failed: 4,
-  skipped: 2,
-  coverage: 87,
-  coverageDetails: {
-    statements: 89.4,
-    branches: 76.2,
-    functions: 91.1,
-    lines: 87,
-    files: [
-      {
-        file: 'src/components/Login/Login.tsx',
-        statements: 61.5,
-        branches: 48.2,
-        functions: 70,
-        lines: 59.8,
-      },
-    ],
-  },
-  executionTime: 12.43,
-  failures: [
-    {
-      name: 'should show error when password is empty',
-      file: 'src/components/Login/Login.test.tsx',
-      line: 42,
-      expected: '"Password is required"',
-      received: 'undefined',
-      errorMessage: 'expect(received).toBe(expected)',
-      stackTrace:
-        'at Object.<anonymous> (Login.test.tsx:42:21)\n' +
-        '  at processTicksAndRejections (node:internal/process/task_queues:95:5)',
-    },
-  ],
-};
-
 type FailureFilter = 'all' | 'failed';
 
 export default function ResultsPage() {
-  const reduceMotion = useReducedMotion();
-  const [summary, setSummary] = useState<TestSummary>(MOCK_SUMMARY);
+  const [summary, setSummary] = useState<TestSummary | null>(null);
   const [isReal, setIsReal] = useState(false);
-  const [expanded, setExpanded] = useState<number | null>(0);
-  const [filter, setFilter] = useState<FailureFilter>('all');
-  const [search, setSearch] = useState('');
 
   useEffect(() => {
     const raw = sessionStorage.getItem('lastRunResults');
 
     if (!raw) {
+      setSummary(null);
+      setIsReal(false);
       return;
     }
 
     try {
-      const parsed = JSON.parse(raw) as Partial<TestSummary>;
+      const parsed = JSON.parse(raw);
+      const normalized = normalizeSummary(parsed);
 
-      setSummary({
-        ...MOCK_SUMMARY,
-        ...parsed,
-        failures: Array.isArray(parsed.failures)
-          ? parsed.failures
-          : [],
-        coverageDetails: normalizeCoverage(
-          parsed.coverageDetails,
-          parsed.coverage
-        ),
-      });
+      if (!normalized) {
+        setSummary(null);
+        setIsReal(false);
+        return;
+      }
 
+      setSummary(normalized);
       setIsReal(true);
     } catch {
+      setSummary(null);
       setIsReal(false);
     }
   }, []);
+
+  if (!summary) {
+    return (
+      <div className="empty-state-page">
+        <div className="empty-state-icon">
+          <FileCode2 size={28} />
+        </div>
+        <h1>No test report available</h1>
+        <p>Run the test suite from the analysis page first.</p>
+        <a href="/analyze" className="secondary-button">
+          Open analysis
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <ReportView
+      summary={summary}
+      isReal={isReal}
+      onReset={() => {
+        sessionStorage.removeItem('lastRunResults');
+        setSummary(null);
+        setIsReal(false);
+      }}
+    />
+  );
+}
+
+function ReportView({
+  summary,
+  isReal,
+  onReset,
+}: {
+  summary: TestSummary;
+  isReal: boolean;
+  onReset: () => void;
+}) {
+  const reduceMotion = useReducedMotion();
+  const [expanded, setExpanded] = useState<number | null>(0);
+  const [filter, setFilter] = useState<FailureFilter>('all');
+  const [search, setSearch] = useState('');
 
   const passRate =
     summary.total > 0
@@ -143,26 +143,14 @@ export default function ResultsPage() {
     return summary.failures.filter((test) => {
       const matchesSearch =
         !query ||
-        `${test.name} ${test.file}`
+        `${test.name} ${test.file} ${test.errorMessage}`
           .toLowerCase()
           .includes(query);
 
-      if (!matchesSearch) {
-        return false;
-      }
-
+      if (!matchesSearch) return false;
       return filter === 'all' || filter === 'failed';
     });
   }, [summary.failures, search, filter]);
-
-  function clearResults() {
-    sessionStorage.removeItem('lastRunResults');
-    setSummary(MOCK_SUMMARY);
-    setIsReal(false);
-    setExpanded(0);
-    setSearch('');
-    setFilter('all');
-  }
 
   return (
     <div className="results-page">
@@ -176,9 +164,7 @@ export default function ResultsPage() {
             <Terminal size={13} /> Execution report
           </div>
           <h1>Test results</h1>
-          <p>
-            Review suite health, failures, coverage, and execution details.
-          </p>
+          <p>Review suite health, failures, coverage, and execution details.</p>
         </div>
 
         <div className="results-actions">
@@ -192,10 +178,7 @@ export default function ResultsPage() {
             </span>
           )}
 
-          <button
-            onClick={clearResults}
-            className="clear-results"
-          >
+          <button onClick={onReset} className="clear-results">
             <RotateCcw size={14} /> Reset
           </button>
         </div>
@@ -211,13 +194,10 @@ export default function ResultsPage() {
           <div className="health-icon">
             <Gauge size={24} />
           </div>
-
           <div>
             <span>Suite health</span>
             <strong>
-              {summary.failed === 0
-                ? 'All tests passed'
-                : 'Attention required'}
+              {summary.failed === 0 ? 'All tests passed' : 'Attention required'}
             </strong>
             <p>
               {summary.total} tests analyzed in {summary.executionTime}s
@@ -228,11 +208,7 @@ export default function ResultsPage() {
         <div className="health-progress">
           <div
             className="health-circle"
-            style={
-              {
-                '--progress': `${passRate * 3.6}deg`,
-              } as React.CSSProperties
-            }
+            style={{ '--progress': `${passRate * 3.6}deg` } as React.CSSProperties}
           >
             <div>
               <strong>{passRate}%</strong>
@@ -248,8 +224,7 @@ export default function ResultsPage() {
             </>
           ) : (
             <>
-              <AlertCircle size={16} />
-              {summary.failed} test
+              <AlertCircle size={16} /> {summary.failed} test
               {summary.failed === 1 ? '' : 's'} need attention.
             </>
           )}
@@ -262,42 +237,12 @@ export default function ResultsPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.14 }}
       >
-        <ResultMetric
-          icon={FileCode2}
-          label="Total tests"
-          value={summary.total}
-          tone="neutral"
-        />
-        <ResultMetric
-          icon={CheckCircle2}
-          label="Passed"
-          value={summary.passed}
-          tone="pass"
-        />
-        <ResultMetric
-          icon={XCircle}
-          label="Failed"
-          value={summary.failed}
-          tone="fail"
-        />
-        <ResultMetric
-          icon={SkipForward}
-          label="Skipped"
-          value={summary.skipped}
-          tone="skip"
-        />
-        <ResultMetric
-          icon={Gauge}
-          label="Coverage"
-          value={formatPercentage(summary.coverage)}
-          tone="coverage"
-        />
-        <ResultMetric
-          icon={Clock3}
-          label="Duration"
-          value={`${summary.executionTime}s`}
-          tone="time"
-        />
+        <ResultMetric icon={FileCode2} label="Total tests" value={summary.total} tone="neutral" />
+        <ResultMetric icon={CheckCircle2} label="Passed" value={summary.passed} tone="pass" />
+        <ResultMetric icon={XCircle} label="Failed" value={summary.failed} tone="fail" />
+        <ResultMetric icon={SkipForward} label="Skipped" value={summary.skipped} tone="skip" />
+        <ResultMetric icon={Gauge} label="Coverage" value={formatPercentage(summary.coverage)} tone="coverage" />
+        <ResultMetric icon={Clock3} label="Duration" value={`${summary.executionTime}s`} tone="time" />
       </motion.div>
 
       <CoverageSection coverage={summary.coverageDetails} />
@@ -307,11 +252,8 @@ export default function ResultsPage() {
           <div>
             <div className="section-kicker">Diagnostics</div>
             <h2>Failure details</h2>
-            <p>
-              Inspect assertion differences and stack traces from the run.
-            </p>
+            <p>Inspect assertion differences and stack traces from the run.</p>
           </div>
-
           <div className="failure-count">
             <XCircle size={14} /> {summary.failed} failed
           </div>
@@ -353,9 +295,7 @@ export default function ResultsPage() {
             >
               <CheckCircle2 size={26} />
               <h3>No failures found</h3>
-              <p>
-                There are no failed tests matching your filter.
-              </p>
+              <p>There are no failed tests matching your filter.</p>
             </motion.div>
           ) : (
             displayedFailures.map((test, index) => (
@@ -364,9 +304,7 @@ export default function ResultsPage() {
                 test={test}
                 isOpen={expanded === index}
                 onToggle={() =>
-                  setExpanded(
-                    expanded === index ? null : index
-                  )
+                  setExpanded(expanded === index ? null : index)
                 }
               />
             ))
@@ -381,137 +319,65 @@ export default function ResultsPage() {
   );
 }
 
-function CoverageSection({
-  coverage,
-}: {
-  coverage?: CoverageDetails | null;
-}) {
-  if (!coverage) {
-    return (
-      <section className="coverage-section coverage-empty">
-        <div className="section-kicker">Code coverage</div>
-        <h2>Coverage unavailable</h2>
-        <p>
-          Run the suite with coverage enabled to see statements, branches, functions, and lines.
-        </p>
-      </section>
-    );
-  }
+function normalizeSummary(value: any): TestSummary | null {
+  if (!value || typeof value.total !== 'number') return null;
 
-  return (
-    <section className="coverage-section">
-      <div className="coverage-heading">
-        <div>
-          <div className="section-kicker">Code coverage</div>
-          <h2>Coverage details</h2>
-          <p>
-            Coverage collected from the latest test run.
-          </p>
-        </div>
-
-        <div className="coverage-total">
-          {formatPercentage(coverage.lines)}
-        </div>
-      </div>
-
-      <div className="coverage-details-grid">
-        <CoverageMetric
-          label="Statements"
-          value={coverage.statements}
-        />
-        <CoverageMetric
-          label="Branches"
-          value={coverage.branches}
-        />
-        <CoverageMetric
-          label="Functions"
-          value={coverage.functions}
-        />
-        <CoverageMetric
-          label="Lines"
-          value={coverage.lines}
-        />
-      </div>
-
-      {coverage.files.length > 0 && (
-        <div className="low-coverage-files">
-          <h3>Low coverage files</h3>
-
-          {coverage.files.slice(0, 10).map((file) => (
-            <div
-              className="coverage-file-row"
-              key={file.file}
-            >
-              <span>{file.file}</span>
-              <strong>{formatPercentage(file.lines)}</strong>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
+  return {
+    total: value.total,
+    passed: toNumber(value.passed) ?? 0,
+    failed: toNumber(value.failed) ?? 0,
+    skipped: toNumber(value.skipped) ?? 0,
+    coverage: toNumber(value.coverage),
+    executionTime: toNumber(value.executionTime) ?? 0,
+    failures: Array.isArray(value.failures)
+      ? value.failures.map(normalizeFailure)
+      : [],
+    coverageDetails: normalizeCoverage(
+      value.coverageDetails,
+      value.coverage
+    ),
+  };
 }
 
-function CoverageMetric({
-  label,
-  value,
-}: {
-  label: string;
-  value: number | null;
-}) {
-  const safeValue =
-    value === null
-      ? 0
-      : Math.max(0, Math.min(100, value));
-
-  return (
-    <div className="coverage-detail-card">
-      <div
-        className="coverage-ring"
-        style={
-          {
-            '--coverage': `${safeValue}%`,
-          } as React.CSSProperties
-        }
-      >
-        <span>{formatPercentage(value)}</span>
-      </div>
-      <strong>{label}</strong>
-    </div>
-  );
+function normalizeFailure(value: any): FailedTest {
+  return {
+    name: String(value?.name || 'Unnamed test'),
+    file: String(value?.file || 'Unknown file'),
+    line: toNumber(value?.line),
+    expected: String(value?.expected || 'Unavailable'),
+    received: String(value?.received || 'Unavailable'),
+    errorMessage: String(value?.errorMessage || 'Test failed'),
+    stackTrace: String(value?.stackTrace || 'No stack trace available'),
+  };
 }
 
 function normalizeCoverage(
   coverage: unknown,
   fallbackLines?: number | null
 ): CoverageDetails | null {
-  if (!coverage || typeof coverage !== 'object') {
-    return null;
-  }
+  if (!coverage || typeof coverage !== 'object') return null;
 
-  const value = coverage as Partial<CoverageDetails>;
+  const value = coverage as any;
 
   return {
-    statements: toNumberOrNull(value.statements),
-    branches: toNumberOrNull(value.branches),
-    functions: toNumberOrNull(value.functions),
-    lines:
-      toNumberOrNull(value.lines) ??
-      toNumberOrNull(fallbackLines),
+    statements: toNumber(value.statements),
+    branches: toNumber(value.branches),
+    functions: toNumber(value.functions),
+    lines: toNumber(value.lines) ?? toNumber(fallbackLines),
     files: Array.isArray(value.files)
-      ? value.files.map((file) => ({
-          file: String(file.file || 'Unknown file'),
-          statements: toNumberOrNull(file.statements),
-          branches: toNumberOrNull(file.branches),
-          functions: toNumberOrNull(file.functions),
-          lines: toNumberOrNull(file.lines),
+      ? value.files.map((file: any) => ({
+          file: String(file?.file || 'Unknown file'),
+          statements: toNumber(file?.statements),
+          branches: toNumber(file?.branches),
+          functions: toNumber(file?.functions),
+          lines: toNumber(file?.lines),
         }))
       : [],
     reportPath: value.reportPath,
   };
 }
 
-function toNumberOrNull(value: unknown) {
+function toNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value)
     ? value
     : null;
@@ -543,6 +409,78 @@ function ResultMetric({
         <span>{label}</span>
         <strong>{value}</strong>
       </div>
+    </div>
+  );
+}
+
+function CoverageSection({
+  coverage,
+}: {
+  coverage: CoverageDetails | null;
+}) {
+  if (!coverage) {
+    return (
+      <section className="coverage-section coverage-empty">
+        <div className="section-kicker">Code coverage</div>
+        <h2>Coverage unavailable</h2>
+        <p>Run the suite with coverage enabled to see detailed metrics.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="coverage-section">
+      <div className="coverage-heading">
+        <div>
+          <div className="section-kicker">Code coverage</div>
+          <h2>Coverage details</h2>
+          <p>Coverage collected from the latest test run.</p>
+        </div>
+        <div className="coverage-total">
+          {formatPercentage(coverage.lines)}
+        </div>
+      </div>
+
+      <div className="coverage-details-grid">
+        <CoverageMetric label="Statements" value={coverage.statements} />
+        <CoverageMetric label="Branches" value={coverage.branches} />
+        <CoverageMetric label="Functions" value={coverage.functions} />
+        <CoverageMetric label="Lines" value={coverage.lines} />
+      </div>
+
+      {coverage.files.length > 0 && (
+        <div className="low-coverage-files">
+          <h3>Low coverage files</h3>
+          {coverage.files.slice(0, 10).map((file) => (
+            <div className="coverage-file-row" key={file.file}>
+              <span>{file.file}</span>
+              <strong>{formatPercentage(file.lines)}</strong>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CoverageMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | null;
+}) {
+  const safeValue = value === null ? 0 : Math.max(0, Math.min(100, value));
+
+  return (
+    <div className="coverage-detail-card">
+      <div
+        className="coverage-ring"
+        style={{ '--coverage': `${safeValue}%` } as React.CSSProperties}
+      >
+        <span>{formatPercentage(value)}</span>
+      </div>
+      <strong>{label}</strong>
     </div>
   );
 }
@@ -586,30 +524,14 @@ function FailureCard({
             exit={{ height: 0, opacity: 0 }}
           >
             <div className="detail-grid">
-              <Detail
-                label="File"
-                value={test.file}
-                mono
-              />
+              <Detail label="File" value={test.file} mono />
               <Detail
                 label="Line"
-                value={
-                  test.line !== null
-                    ? String(test.line)
-                    : 'N/A'
-                }
+                value={test.line === null ? 'N/A' : String(test.line)}
                 mono
               />
-              <Detail
-                label="Expected"
-                value={test.expected}
-                mono
-              />
-              <Detail
-                label="Received"
-                value={test.received}
-                mono
-              />
+              <Detail label="Expected" value={test.expected} mono />
+              <Detail label="Received" value={test.received} mono />
             </div>
 
             <div className="error-block">
