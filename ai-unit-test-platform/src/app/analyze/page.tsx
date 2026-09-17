@@ -314,17 +314,22 @@ export default function AnalyzePage() {
         }),
       });
 
-      const data = await response.json();
+        const data = await response.json();
 
-      if (!response.ok || !data.ok) {
-        const details = [data.message, data.environment?.message, data.stderr]
-          .filter(Boolean)
-          .join(' ');
-        throw new Error(details || 'Tests failed. Open the report for details.');
-      }
+        // Only block navigation for infrastructure failures — not for suites that ran and had failing tests.
+        if (!response.ok) {
+          const details = [data.message, data.environment?.message, data.stderr]
+            .filter(Boolean)
+            .join(' ');
+          throw new Error(details || 'Could not run tests.');
+        }
 
-      sessionStorage.setItem('lastRunResults', JSON.stringify(data.summary));
-      router.push('/results');
+        if (data.phase && data.phase !== 'completed') {
+          throw new Error(data.message || 'Tests did not complete successfully.');
+        }
+
+        sessionStorage.setItem('lastRunResults', JSON.stringify(data.summary));
+        router.push('/results');
     } catch (err: any) {
       setError(err?.message || 'Could not run tests.');
     } finally {
