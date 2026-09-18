@@ -137,6 +137,13 @@ function ReportView({
       ? Math.round((summary.passed / summary.total) * 100)
       : 0;
 
+  // total === 0 means nothing actually ran (a crashed suite, a missing
+  // module, a config error) -- this is a distinct state from "ran and
+  // everything passed", and must never be shown as green/passing. Under
+  // normal use, analyze/page.tsx's handleRun() should already catch this
+  // before ever navigating here -- this is a defense-in-depth fallback.
+  const suiteDidNotRun = summary.total === 0;
+
   const displayedFailures = useMemo(() => {
     const query = search.toLowerCase().trim();
 
@@ -197,7 +204,11 @@ function ReportView({
           <div>
             <span>Suite health</span>
             <strong>
-              {summary.failed === 0 ? 'All tests passed' : 'Attention required'}
+              {suiteDidNotRun
+                ? 'No tests were run'
+                : summary.failed === 0
+                  ? 'All tests passed'
+                  : 'Attention required'}
             </strong>
             <p>
               {summary.total} tests analyzed in {summary.executionTime}s
@@ -218,7 +229,12 @@ function ReportView({
         </div>
 
         <div className="health-message">
-          {summary.failed === 0 ? (
+          {suiteDidNotRun ? (
+            <>
+              <AlertCircle size={16} /> The test suite did not execute — check stderr from the run for
+              the underlying error.
+            </>
+          ) : summary.failed === 0 ? (
             <>
               <CheckCircle2 size={16} /> Your suite is green.
             </>

@@ -36,6 +36,14 @@ interface ScaffoldInfo {
   installCommand: string;
 }
 
+interface InstallResult {
+  ok: boolean;
+  exitCode: number;
+  cmd: string;
+  stdoutTail: string;
+  stderrTail: string;
+}
+
 interface Analysis {
   projectRoot: string;
   isSingleFile: boolean;
@@ -47,6 +55,9 @@ interface Analysis {
   runCommandKey: string | null;
   sourceFiles: SourceFile[];
   scaffold: ScaffoldInfo | null;
+  // Result of the automatic `npm install` (or yarn/pnpm) run right after
+  // analysis. null when it was skipped (e.g. single-file analysis).
+  install?: InstallResult | null;
   // Which repo/path was analyzed, and the requester's own token used to do
   // it (if it was a repo). Both are set by the dashboard page and travel
   // forward via sessionStorage so the publish step can reuse them without
@@ -112,6 +123,7 @@ export default function AnalyzePage() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [showInstallLog, setShowInstallLog] = useState(false);
 
   useEffect(() => {
     const raw = sessionStorage.getItem('lastAnalysis');
@@ -347,6 +359,22 @@ export default function AnalyzePage() {
           );
         }
 
+        // A "completed" report with 0 total tests and a failed suite means
+        // the suite crashed before running anything (e.g. "Cannot find
+        // module", a config error) -- NOT that everything passed. Without
+        // this check, failed stays 0 (nothing ran to fail) and the results
+        // page would wrongly show "All tests passed" at 0%.
+        if (
+          data.summary.total === 0 &&
+          (data.summary.suitesFailed > 0 || !data.ok)
+        ) {
+          throw new Error(
+            data.stderr ||
+              data.message ||
+              'The test suite failed to run (0 tests executed). See the error output for details.'
+          );
+        }
+
         // Store reports even if tests failed.
         sessionStorage.setItem(
           'lastRunResults',
@@ -450,11 +478,50 @@ export default function AnalyzePage() {
             <div className="setup-icon"><WandSparkles size={19} /></div>
             <div className="setup-content">
               <div className="setup-title">Jest setup required</div>
-              <p>Configuration was prepared for this project. Install the dependencies below before generating or running tests.</p>
+              <p>Configuration was prepared for this project. Dependencies were installed automatically below — you shouldn't need to run this yourself unless the automatic install failed.</p>
               <div className="command-row">
                 <code>{analysis.scaffold.installCommand || 'Install command unavailable. Re-analyze the project.'}</code>
                 <button onClick={copyInstallCommand} className="copy-button"><Clipboard size={14} /> {copied ? 'Copied' : 'Copy'}</button>
               </div>
+            </div>
+          </motion.section>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {analysis.install && !analysis.install.ok && (
+          <motion.section
+            className="environment-warning"
+            role="alert"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+          >
+            <AlertTriangle size={17} />
+            <div>
+              <div>
+                Automatic dependency install ({analysis.install.cmd}) failed with exit code{' '}
+                {analysis.install.exitCode}. Test generation still works, but running tests will fail
+                until dependencies are installed.
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowInstallLog((value) => !value)}
+                className="copy-button"
+                style={{ marginTop: '0.5rem' }}
+              >
+                {showInstallLog ? 'Hide' : 'Show'} install log
+              </button>
+              {showInstallLog && (
+                <pre style={{ marginTop: '0.5rem', maxHeight: 200, overflow: 'auto' }}>
+                  {analysis.install.stderrTail || analysis.install.stdoutTail || 'No output captured.'}
+                </pre>
+              )}
+              <p style={{ marginTop: '0.5rem' }}>
+                To fix it manually: open a terminal, run{' '}
+                <code>cd &quot;{analysis.projectRoot}&quot;</code>, then{' '}
+                <code>{analysis.install.cmd}</code>.
+              </p>
             </div>
           </motion.section>
         )}
@@ -555,7 +622,6 @@ function ArrowSmall() {
 // Turns an absolute file path like
 // C:\Users\you\AppData\Local\Temp\ai-test-platform\04b6f448.../ui/src/pages/Router.tsx
 // into a short, readable, project-relative one: ui/src/pages/Router.tsx
-// so the UI never shows the confusing local temp-folder location.
 function toDisplayPath(fullPath: string, projectRoot: string) {
   if (!fullPath) return fullPath;
   const normalizedFull = fullPath.replace(/\\/g, '/');
