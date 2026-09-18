@@ -21,7 +21,7 @@ export default function PublishToGithubButton({
   repoUrl,
   githubToken,
   files,
-  baseBranch = 'main',
+  baseBranch,
 }: Props) {
   const [status, setStatus] = useState<Status>('idle');
   const [prUrl, setPrUrl] = useState<string | null>(null);
@@ -38,11 +38,9 @@ export default function PublishToGithubButton({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           repoUrl,
-          baseBranch,
+          baseBranch, // undefined unless the caller explicitly passed one
           files: files.map((f) => ({ path: f.relativePath, content: f.content })),
           prTitle: 'Add AI-generated unit tests',
-          // The REQUESTER's own token, carried forward from the dashboard.
-          // Never falls back to any shared secret from this component.
           githubToken,
         }),
       });
