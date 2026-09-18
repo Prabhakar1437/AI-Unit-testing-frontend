@@ -66,7 +66,18 @@ export default function DashboardPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Analysis failed.');
 
-      sessionStorage.setItem('lastAnalysis', JSON.stringify(data));
+      // Carry forward WHAT was analyzed (a local path vs. a GitHub/GitLab/
+      // Bitbucket repo URL) so the /analyze page can later decide whether
+      // the "Push to GitHub" button should appear, and which repo it
+      // should target — instead of a hardcoded URL.
+      sessionStorage.setItem(
+        'lastAnalysis',
+        JSON.stringify({
+          ...data,
+          sourceType: tab,
+          sourceTarget: target,
+        })
+      );
       router.push('/analyze');
     } catch (err: any) {
       setError(err?.message || 'Could not analyze the project.');

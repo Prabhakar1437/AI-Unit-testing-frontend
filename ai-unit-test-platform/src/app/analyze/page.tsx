@@ -22,6 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import DiffConfirmModal from '@/components/DiffConfirmModal';
+import PublishToGithubButton from '@/components/PublishToGithubButton';
 
 interface SourceFile {
   path: string;
@@ -46,9 +47,15 @@ interface Analysis {
   runCommandKey: string | null;
   sourceFiles: SourceFile[];
   scaffold: ScaffoldInfo | null;
+  // Added so the publish step knows WHICH repo was analyzed, instead of
+  // a hardcoded URL. Populated by the dashboard page when it calls
+  // sessionStorage.setItem('lastAnalysis', ...).
+  sourceType?: 'local' | 'repo';
+  sourceTarget?: string;
 }
 
 interface GeneratedItem {
+  relativePath: any;
   unitName: string;
   targetPath: string;
   content: string;
@@ -376,6 +383,12 @@ export default function AnalyzePage() {
   const testCount = analysis.sourceFiles?.filter((file) => file.hasExistingTest).length || 0;
   const progress = generated.length > 0 ? 100 : testPlan ? 75 : selectedFile ? 50 : 25;
 
+  // The publish button only makes sense when the source was a GitHub/GitLab/
+  // Bitbucket repo (not an arbitrary local folder), and only once there is
+  // something generated to push.
+  const canPublishToGithub =
+    analysis.sourceType === 'repo' && Boolean(analysis.sourceTarget) && generated.length > 0;
+
   return (
     <div className="analysis-page">
       <motion.div
@@ -507,6 +520,13 @@ export default function AnalyzePage() {
           </motion.section>
         )}
       </AnimatePresence>
+
+      {canPublishToGithub && (
+        <PublishToGithubButton
+          repoUrl={analysis.sourceTarget as string}
+          files={generated.map((g) => ({ relativePath: g.relativePath, content: g.content }))}
+        />
+      )}
 
       {pendingConfirm && <DiffConfirmModal filePath={pendingConfirm.targetPath} existingContent={pendingConfirm.diff?.map((part: any) => (!part.added ? part.value : '')).join('') || ''} newContent={pendingConfirm.content} onCancel={() => setPendingConfirm(null)} onKeepBoth={() => { void doSave(pendingConfirm, 'keep-both'); setPendingConfirm(null); }} onConfirm={() => { void doSave(pendingConfirm, 'overwrite'); setPendingConfirm(null); }} />}
     </div>
