@@ -34,6 +34,7 @@ export default function DashboardPage() {
   const [tab, setTab] = useState<Tab>('local');
   const [localPath, setLocalPath] = useState('');
   const [repoUrl, setRepoUrl] = useState('');
+  const [githubToken, setGithubToken] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,6 +55,11 @@ export default function DashboardPage() {
         setError('Use a valid GitHub, GitLab, or Bitbucket repository URL.');
         return;
       }
+
+      if (!githubToken.trim()) {
+        setError('Enter your GitHub Personal Access Token to analyze and publish to this repo.');
+        return;
+      }
     }
 
     setLoading(true);
@@ -61,21 +67,30 @@ export default function DashboardPage() {
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: tab, target }),
+        body: JSON.stringify({
+          type: tab,
+          target,
+          // Only sent for repo analysis; the backend uses it to clone
+          // (possibly private) repos as the requester, not as a shared
+          // server-side identity. Never persisted server-side.
+          githubToken: tab === 'repo' ? githubToken.trim() : undefined,
+        }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Analysis failed.');
 
-      // Carry forward WHAT was analyzed (a local path vs. a GitHub/GitLab/
-      // Bitbucket repo URL) so the /analyze page can later decide whether
-      // the "Push to GitHub" button should appear, and which repo it
-      // should target — instead of a hardcoded URL.
+      // Carry forward what was analyzed AND the token used, so the
+      // /analyze page can later publish back to the same repo as the
+      // same person, without asking them to paste the token twice.
+      // sessionStorage is per-browser-tab and cleared on close -- the
+      // token never touches any server-side file.
       sessionStorage.setItem(
         'lastAnalysis',
         JSON.stringify({
           ...data,
           sourceType: tab,
           sourceTarget: target,
+          githubToken: tab === 'repo' ? githubToken.trim() : undefined,
         })
       );
       router.push('/analyze');
@@ -187,6 +202,38 @@ export default function DashboardPage() {
               ? 'The local agent reads files directly. Your source code is not uploaded.'
               : 'The agent creates a temporary workspace and analyzes the repository locally.'}
           </p>
+
+          {tab === 'repo' && (
+            <>
+              <label htmlFor="github-token" className="input-label" style={{ marginTop: '1rem' }}>
+                Your GitHub Personal Access Token
+              </label>
+              <div className="input-wrap">
+                <span className="input-leading"><KeyRound size={18} /></span>
+                <input
+                  id="github-token"
+                  type="password"
+                  value={githubToken}
+                  onChange={(event) => setGithubToken(event.target.value)}
+                  placeholder="ghp_..."
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+              <p className="input-hint">
+                Used only for this session to read and push to repos you have access to — never stored on
+                any server.{' '}
+                <a
+                  href="https://github.com/settings/tokens"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Create a classic token
+                </a>{' '}
+                with the <code>repo</code> scope if you don't have one yet.
+              </p>
+            </>
+          )}
 
           <AnimatePresence mode="wait">
             {error && (

@@ -10,6 +10,7 @@ interface GeneratedFile {
 
 interface Props {
   repoUrl: string;
+  githubToken: string;
   files: GeneratedFile[];
   baseBranch?: string;
 }
@@ -18,6 +19,7 @@ type Status = 'idle' | 'loading' | 'success' | 'error';
 
 export default function PublishToGithubButton({
   repoUrl,
+  githubToken,
   files,
   baseBranch = 'main',
 }: Props) {
@@ -39,6 +41,9 @@ export default function PublishToGithubButton({
           baseBranch,
           files: files.map((f) => ({ path: f.relativePath, content: f.content })),
           prTitle: 'Add AI-generated unit tests',
+          // The REQUESTER's own token, carried forward from the dashboard.
+          // Never falls back to any shared secret from this component.
+          githubToken,
         }),
       });
 
@@ -74,7 +79,7 @@ export default function PublishToGithubButton({
       <button
         type="button"
         onClick={handlePublish}
-        disabled={status === 'loading' || files.length === 0}
+        disabled={status === 'loading' || files.length === 0 || !githubToken}
         className="publish-github-button"
       >
         {status === 'loading' ? (

@@ -47,11 +47,13 @@ interface Analysis {
   runCommandKey: string | null;
   sourceFiles: SourceFile[];
   scaffold: ScaffoldInfo | null;
-  // Added so the publish step knows WHICH repo was analyzed, instead of
-  // a hardcoded URL. Populated by the dashboard page when it calls
-  // sessionStorage.setItem('lastAnalysis', ...).
+  // Which repo/path was analyzed, and the requester's own token used to do
+  // it (if it was a repo). Both are set by the dashboard page and travel
+  // forward via sessionStorage so the publish step can reuse them without
+  // asking the user to paste the token twice.
   sourceType?: 'local' | 'repo';
   sourceTarget?: string;
+  githubToken?: string;
 }
 
 interface GeneratedItem {
@@ -384,10 +386,13 @@ export default function AnalyzePage() {
   const progress = generated.length > 0 ? 100 : testPlan ? 75 : selectedFile ? 50 : 25;
 
   // The publish button only makes sense when the source was a GitHub/GitLab/
-  // Bitbucket repo (not an arbitrary local folder), and only once there is
-  // something generated to push.
+  // Bitbucket repo (not an arbitrary local folder), a token was captured for
+  // it, and there's something generated to push.
   const canPublishToGithub =
-    analysis.sourceType === 'repo' && Boolean(analysis.sourceTarget) && generated.length > 0;
+    analysis.sourceType === 'repo' &&
+    Boolean(analysis.sourceTarget) &&
+    Boolean(analysis.githubToken) &&
+    generated.length > 0;
 
   return (
     <div className="analysis-page">
@@ -399,7 +404,12 @@ export default function AnalyzePage() {
         <div>
           <div className="eyebrow"><Sparkles size={13} /> Analysis workspace</div>
           <h1>Project intelligence</h1>
-          <p className="project-path"><FolderOpen size={14} /> {analysis.projectRoot}</p>
+          <p className="project-path">
+            <FolderOpen size={14} />{' '}
+            {analysis.sourceType === 'repo' && analysis.sourceTarget
+              ? analysis.sourceTarget
+              : analysis.projectRoot}
+          </p>
         </div>
         <div className="analysis-status"><span className="status-dot" /> Agent connected</div>
       </motion.div>
@@ -481,7 +491,7 @@ export default function AnalyzePage() {
             {filteredFiles.length === 0 ? <div className="no-files">No matching source files found.</div> : filteredFiles.map((file) => (
               <label key={file.path} className={`file-row ${selectedFile === file.path ? 'selected' : ''}`}>
                 <input type="radio" name="sourceFile" checked={selectedFile === file.path} onChange={() => { setSelectedFile(file.path); clearWorkflowAfterFileChange(); }} />
-                <FileCode2 size={16} className="file-icon" /><span className="file-name">{file.path}</span>
+                <FileCode2 size={16} className="file-icon" /><span className="file-name">{toDisplayPath(file.path, analysis.projectRoot)}</span>
                 {file.hasExistingTest && <span className="existing-badge">tested</span>}
               </label>
             ))}
@@ -515,7 +525,7 @@ export default function AnalyzePage() {
         {generated.length > 0 && (
           <motion.section className="generated-section" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}>
             <div className="panel-heading"><div><div className="section-kicker">Step 04</div><h2>Review generated tests</h2><p>Inspect the code before writing it to your project.</p></div><span className="generated-badge"><CheckCircle2 size={14} /> {generated.length} generated</span></div>
-            <div className="generated-list">{generated.map((item) => <div className="generated-card" key={item.unitName}><div className="generated-header"><div className="generated-file"><FileCode2 size={16} /> <span>{item.targetPath}</span></div>{savedPaths[item.unitName] ? <span className="saved-badge"><Check size={13} /> Saved</span> : <button onClick={() => handleSaveClick(item)} className="save-button">{item.exists ? 'Review changes' : 'Save test'} <ArrowSmall /></button>}</div><pre>{item.content}</pre></div>)}</div>
+            <div className="generated-list">{generated.map((item) => <div className="generated-card" key={item.unitName}><div className="generated-header"><div className="generated-file"><FileCode2 size={16} /> <span>{toDisplayPath(item.targetPath, analysis.projectRoot)}</span></div>{savedPaths[item.unitName] ? <span className="saved-badge"><Check size={13} /> Saved</span> : <button onClick={() => handleSaveClick(item)} className="save-button">{item.exists ? 'Review changes' : 'Save test'} <ArrowSmall /></button>}</div><pre>{item.content}</pre></div>)}</div>
             <div className="run-section"><div><div className="section-kicker">Step 05</div><h2>Ready to execute?</h2><p>Validate the environment, run the suite, and view the detailed report.</p></div><button onClick={handleRun} disabled={running} className="run-button">{running ? <><Loader2 className="spin" size={17} /> Running suite...</> : <><Play size={16} fill="currentColor" /> Run tests</>}</button></div>
           </motion.section>
         )}
@@ -524,11 +534,12 @@ export default function AnalyzePage() {
       {canPublishToGithub && (
         <PublishToGithubButton
           repoUrl={analysis.sourceTarget as string}
+          githubToken={analysis.githubToken as string}
           files={generated.map((g) => ({ relativePath: g.relativePath, content: g.content }))}
         />
       )}
 
-      {pendingConfirm && <DiffConfirmModal filePath={pendingConfirm.targetPath} existingContent={pendingConfirm.diff?.map((part: any) => (!part.added ? part.value : '')).join('') || ''} newContent={pendingConfirm.content} onCancel={() => setPendingConfirm(null)} onKeepBoth={() => { void doSave(pendingConfirm, 'keep-both'); setPendingConfirm(null); }} onConfirm={() => { void doSave(pendingConfirm, 'overwrite'); setPendingConfirm(null); }} />}
+      {pendingConfirm && <DiffConfirmModal filePath={toDisplayPath(pendingConfirm.targetPath, analysis.projectRoot)} existingContent={pendingConfirm.diff?.map((part: any) => (!part.added ? part.value : '')).join('') || ''} newContent={pendingConfirm.content} onCancel={() => setPendingConfirm(null)} onKeepBoth={() => { void doSave(pendingConfirm, 'keep-both'); setPendingConfirm(null); }} onConfirm={() => { void doSave(pendingConfirm, 'overwrite'); setPendingConfirm(null); }} />}
     </div>
   );
 }
@@ -539,4 +550,17 @@ function Metric({ icon: Icon, label, value, color }: { icon: any; label: string;
 
 function ArrowSmall() {
   return <span aria-hidden="true">→</span>;
+}
+
+// Turns an absolute file path like
+// C:\Users\you\AppData\Local\Temp\ai-test-platform\04b6f448.../ui/src/pages/Router.tsx
+// into a short, readable, project-relative one: ui/src/pages/Router.tsx
+// so the UI never shows the confusing local temp-folder location.
+function toDisplayPath(fullPath: string, projectRoot: string) {
+  if (!fullPath) return fullPath;
+  const normalizedFull = fullPath.replace(/\\/g, '/');
+  const normalizedRoot = projectRoot.replace(/\\/g, '/').replace(/\/$/, '');
+  return normalizedFull.startsWith(normalizedRoot)
+    ? normalizedFull.slice(normalizedRoot.length + 1)
+    : normalizedFull;
 }
