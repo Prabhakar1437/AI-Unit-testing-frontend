@@ -1,32 +1,103 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import type { Variants } from 'framer-motion';
 import {
   ArrowRight,
-  CheckCircle2,
   CircleDot,
   FolderSearch,
   Github,
-  GitBranch,
   KeyRound,
   Loader2,
+  Search,
   Sparkles,
-  Terminal,
   TestTube2,
-  Zap,
+  Wand2,
+  PlayCircle,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 type Tab = 'local' | 'repo';
 
-const capabilities = [
-  { icon: FolderSearch, title: 'Detect your stack', text: 'Identify language, framework, package manager, and test setup.' },
-  { icon: Sparkles, title: 'Generate with AI', text: 'Create focused Jest tests from real functions and components.' },
-  { icon: Terminal, title: 'Run locally', text: 'Execute validated test commands on your own machine.' },
+const supported = ['JavaScript', 'TypeScript', 'React', 'Next.js', 'Jest'];
+
+const pipeline = [
+  {
+    icon: Search,
+    title: 'Detect',
+    text: 'Reads your stack — language, framework, package manager, existing test setup.',
+  },
+  {
+    icon: Wand2,
+    title: 'Generate',
+    text: 'Writes focused Jest tests from your real functions and components.',
+  },
+  {
+    icon: PlayCircle,
+    title: 'Run',
+    text: 'Executes the suite on your own machine and reports coverage.',
+  },
 ];
 
-const supported = ['JavaScript', 'TypeScript', 'React', 'Next.js', 'Jest'];
+const terminalLines: { prompt?: boolean; text: string; tone?: 'ok' | 'default' }[] = [
+  { prompt: true, text: 'analyze github.com/you/checkout-app' },
+  { text: '✓ Detected React + TypeScript + Jest', tone: 'ok' },
+  { prompt: true, text: 'generate src/components/PaymentForm.tsx' },
+  { text: '✓ 9 test cases written', tone: 'ok' },
+  { prompt: true, text: 'run' },
+  { text: '✓ 9 passed   Coverage 91%', tone: 'ok' },
+];
+
+function TerminalDemo() {
+  const reduceMotion = useReducedMotion();
+  const [visibleCount, setVisibleCount] = useState(reduceMotion ? terminalLines.length : 0);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+
+    let cancelled = false;
+
+    async function play() {
+      while (!cancelled) {
+        for (let i = 0; i <= terminalLines.length; i++) {
+          if (cancelled) return;
+          setVisibleCount(i);
+          await new Promise((resolve) => setTimeout(resolve, i === 0 ? 500 : 620));
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2400));
+        if (cancelled) return;
+        setVisibleCount(0);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+
+    play();
+    return () => {
+      cancelled = true;
+    };
+  }, [reduceMotion]);
+
+  return (
+    <div className="terminal-shell">
+      <div className="terminal-titlebar">
+        <span className="terminal-dot" style={{ background: '#f87171' }} />
+        <span className="terminal-dot" style={{ background: '#fbbf24' }} />
+        <span className="terminal-dot" style={{ background: '#34d399' }} />
+        <span className="terminal-titletext">ai-unit-test</span>
+      </div>
+      <div className="terminal-body">
+        {terminalLines.slice(0, visibleCount).map((line, index) => (
+          <div key={index} className={`terminal-line ${line.tone === 'ok' ? 'is-ok' : ''}`}>
+            {line.prompt ? <span className="terminal-caret">$</span> : null}
+            <span>{line.text}</span>
+          </div>
+        ))}
+        <div className="terminal-cursor" />
+      </div>
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -66,10 +137,6 @@ export default function DashboardPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Analysis failed.');
 
-      // Carry forward WHAT was analyzed (a local path vs. a GitHub/GitLab/
-      // Bitbucket repo URL) so the /analyze page can later decide whether
-      // the "Push to GitHub" button should appear, and which repo it
-      // should target — instead of a hardcoded URL.
       sessionStorage.setItem(
         'lastAnalysis',
         JSON.stringify({
@@ -86,58 +153,54 @@ export default function DashboardPage() {
     }
   }
 
-  const enterAnimation = reduceMotion
-    ? undefined
-    : { opacity: 1, y: 0 };
+  const heroContainer = {
+    hidden: {},
+    visible: { transition: { staggerChildren: 0.09, delayChildren: 0.05 } },
+  };
+
+  const heroItem: Variants = {
+    hidden: { opacity: 0, y: 16 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.55, ease: 'easeOut' } },
+  };
 
   return (
     <div className="dashboard-page">
       <motion.section
         className="hero-section"
-        initial={reduceMotion ? false : { opacity: 0, y: 18 }}
-        animate={enterAnimation}
-        transition={{ duration: 0.55, ease: 'easeOut' }}
+        variants={reduceMotion ? undefined : heroContainer}
+        initial={reduceMotion ? false : 'hidden'}
+        animate="visible"
       >
         <div className="hero-copy">
-          <div className="eyebrow">
-            <span className="eyebrow-icon"><Sparkles size={14} /></span>
-            Intelligent test engineering
-          </div>
-          <h1>Turn your codebase into a <span className="gradient-text">tested codebase.</span></h1>
-          <p className="hero-description">
-            Analyze a project, generate reliable Jest tests with AI, review every change,
-            and run the suite locally — all from one focused workspace.
-          </p>
+          <motion.h1 variants={reduceMotion ? undefined : heroItem}>
+            Turn your codebase into a <span className="gradient-text">tested codebase.</span>
+          </motion.h1>
+          <motion.p className="hero-description" variants={reduceMotion ? undefined : heroItem}>
+            Point it at a repo or a local project. It reads the code, writes the tests, runs them,
+            and shows you what passed — with every generated file reviewable before it touches
+            anything.
+          </motion.p>
 
-          <div className="supported-row" aria-label="Supported technologies">
+          <motion.div className="supported-row" aria-label="Supported technologies" variants={reduceMotion ? undefined : heroItem}>
             <span className="supported-label">Works with</span>
             {supported.map((item) => <span className="tech-pill" key={item}>{item}</span>)}
-          </div>
+          </motion.div>
         </div>
 
-        <motion.div
-          className="hero-orbit"
-          animate={reduceMotion ? undefined : { y: [0, -10, 0] }}
-          transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-        >
-          <div className="orbit-ring ring-one" />
-          <div className="orbit-ring ring-two" />
-          <div className="orbit-core"><TestTube2 size={38} /></div>
-          <div className="orbit-node node-one"><CheckCircle2 size={16} /></div>
-          <div className="orbit-node node-two"><Zap size={16} /></div>
-          <div className="orbit-node node-three"><GitBranch size={16} /></div>
+        <motion.div variants={reduceMotion ? undefined : heroItem}>
+          <TerminalDemo />
         </motion.div>
       </motion.section>
 
       <motion.section
         className="workspace-card"
-        initial={reduceMotion ? false : { opacity: 0, y: 24 }}
-        animate={enterAnimation}
-        transition={{ duration: 0.55, delay: 0.12, ease: 'easeOut' }}
+        initial={reduceMotion ? false : { opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.3, ease: 'easeOut' }}
       >
         <div className="workspace-heading">
           <div>
-            <div className="section-kicker">Start a new analysis</div>
+            <div className="workspace-kicker">Start a new analysis</div>
             <h2>Where should we begin?</h2>
           </div>
           <div className="secure-badge"><KeyRound size={14} /> Local-first</div>
@@ -208,35 +271,30 @@ export default function DashboardPage() {
         </form>
       </motion.section>
 
-      <section className="capabilities-grid" aria-label="Platform capabilities">
-        {capabilities.map((item, index) => {
-          const Icon = item.icon;
-          return (
-            <motion.div
-              className="capability-card"
-              key={item.title}
-              initial={reduceMotion ? false : { opacity: 0, y: 16 }}
-              animate={enterAnimation}
-              transition={{ duration: 0.45, delay: 0.2 + index * 0.08 }}
-              whileHover={reduceMotion ? undefined : { y: -4 }}
-            >
-              <div className="capability-icon"><Icon size={19} /></div>
-              <div><h3>{item.title}</h3><p>{item.text}</p></div>
-              <span className="step-number">0{index + 1}</span>
-            </motion.div>
-          );
-        })}
+      <section className="pipeline-section" aria-label="How it works">
+        <div className="pipeline-heading">
+          <Sparkles size={14} />
+          <span>How it works</span>
+        </div>
+        <div className="pipeline-track">
+          {pipeline.map((step, index) => {
+            const Icon = step.icon;
+            return (
+              <div className="pipeline-step" key={step.title}>
+                <div className="pipeline-node">
+                  <span className="pipeline-index">{index + 1}</span>
+                  <Icon size={19} />
+                </div>
+                <div className="pipeline-copy">
+                  <h3>{step.title}</h3>
+                  <p>{step.text}</p>
+                </div>
+                {index < pipeline.length - 1 && <span className="pipeline-connector" />}
+              </div>
+            );
+          })}
+        </div>
       </section>
-
-      <div className="workflow-line">
-        <span className="workflow-dot active" /> Detect
-        <span className="workflow-connector" />
-        <span className="workflow-dot" /> Generate
-        <span className="workflow-connector" />
-        <span className="workflow-dot" /> Review
-        <span className="workflow-connector" />
-        <span className="workflow-dot" /> Run
-      </div>
     </div>
   );
 }
