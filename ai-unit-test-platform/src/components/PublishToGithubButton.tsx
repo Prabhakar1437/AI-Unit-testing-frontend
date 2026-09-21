@@ -10,9 +10,8 @@ interface GeneratedFile {
 
 interface Props {
   repoUrl: string;
+  githubToken: string;
   files: GeneratedFile[];
-  // No default here anymore -- leaving this undefined lets the backend
-  // auto-detect the repo's REAL default branch instead of assuming "main".
   baseBranch?: string;
 }
 
@@ -20,6 +19,7 @@ type Status = 'idle' | 'loading' | 'success' | 'error';
 
 export default function PublishToGithubButton({
   repoUrl,
+  githubToken,
   files,
   baseBranch,
 }: Props) {
@@ -38,9 +38,10 @@ export default function PublishToGithubButton({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           repoUrl,
-          baseBranch, // undefined unless explicitly passed
+          baseBranch, // undefined unless the caller explicitly passed one
           files: files.map((f) => ({ path: f.relativePath, content: f.content })),
           prTitle: 'Add AI-generated unit tests',
+          githubToken,
         }),
       });
 
@@ -76,7 +77,7 @@ export default function PublishToGithubButton({
       <button
         type="button"
         onClick={handlePublish}
-        disabled={status === 'loading' || files.length === 0}
+        disabled={status === 'loading' || files.length === 0 || !githubToken}
         className="publish-github-button"
       >
         {status === 'loading' ? (
