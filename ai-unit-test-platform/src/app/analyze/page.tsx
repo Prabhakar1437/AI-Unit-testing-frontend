@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
+import DiffConfirmModal from '@/components/DiffConfirmModal';
+import PublishToGithubButton from '@/components/PublishToGithubButton';
 import {
   AlertTriangle,
   Check,
@@ -21,8 +23,6 @@ import {
   WandSparkles,
   X,
 } from 'lucide-react';
-import DiffConfirmModal from '@/components/DiffConfirmModal';
-import PublishToGithubButton from '@/components/PublishToGithubButton';
 
 interface SourceFile {
   path: string;
