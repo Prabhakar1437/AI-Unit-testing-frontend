@@ -1,7 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { GitPullRequest, Loader2, ExternalLink, AlertCircle } from 'lucide-react';
+import {
+  AlertCircle,
+  ExternalLink,
+  GitPullRequest,
+  Loader2,
+} from 'lucide-react';
 
 interface GeneratedFile {
   relativePath: string;
@@ -35,11 +40,16 @@ export default function PublishToGithubButton({
     try {
       const response = await fetch('/api/publish-tests', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           repoUrl,
-          baseBranch, // undefined unless the caller explicitly passed one
-          files: files.map((f) => ({ path: f.relativePath, content: f.content })),
+          baseBranch,
+          files: files.map((file) => ({
+            path: file.relativePath,
+            content: file.content,
+          })),
           prTitle: 'Add AI-generated unit tests',
           githubToken,
         }),
@@ -53,8 +63,12 @@ export default function PublishToGithubButton({
 
       setPrUrl(data.pullRequestUrl);
       setStatus('success');
-    } catch (err: any) {
-      setError(err?.message || 'Could not publish tests to GitHub.');
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Could not publish tests to GitHub.'
+      );
       setStatus('error');
     }
   }
@@ -67,7 +81,8 @@ export default function PublishToGithubButton({
         rel="noopener noreferrer"
         className="publish-github-button success"
       >
-        <ExternalLink size={16} /> View Pull Request
+        <ExternalLink size={16} />
+        View Pull Request
       </a>
     );
   }
@@ -82,19 +97,22 @@ export default function PublishToGithubButton({
       >
         {status === 'loading' ? (
           <>
-            <Loader2 className="spin" size={16} /> Pushing branch & opening PR...
+            <Loader2 className="spin" size={16} />
+            Pushing branch &amp; opening PR...
           </>
         ) : (
           <>
-            <GitPullRequest size={16} /> Push {files.length} test file
-            {files.length === 1 ? '' : 's'} to GitHub
+            <GitPullRequest size={16} />
+            Push {files.length} test file{files.length === 1 ? '' : 's'} to
+            GitHub
           </>
         )}
       </button>
 
       {status === 'error' && error && (
         <div className="publish-github-error" role="alert">
-          <AlertCircle size={14} /> {error}
+          <AlertCircle size={14} />
+          {error}
         </div>
       )}
     </div>
