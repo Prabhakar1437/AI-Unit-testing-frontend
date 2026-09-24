@@ -96,6 +96,15 @@ interface EnvironmentState {
   message: string;
 }
 
+// Matches the same pattern used on the dashboard and the publish button,
+// so this page can tell whether the analyzed repo is CodeCommit (no
+// per-session token needed) vs GitHub/GitLab/Bitbucket (token required).
+const CODECOMMIT_HOST_PATTERN = /^https?:\/\/git-codecommit\.[a-z0-9-]+\.amazonaws\.com\/.+/i;
+
+function isCodeCommitUrl(url: string) {
+  return CODECOMMIT_HOST_PATTERN.test(url.trim());
+}
+
 export default function AnalyzePage() {
   const router = useRouter();
   const reduceMotion = useReducedMotion();
@@ -385,13 +394,17 @@ export default function AnalyzePage() {
   const testCount = analysis.sourceFiles?.filter((file) => file.hasExistingTest).length || 0;
   const progress = generated.length > 0 ? 100 : testPlan ? 75 : selectedFile ? 50 : 25;
 
-  // The publish button only makes sense when the source was a GitHub/GitLab/
-  // Bitbucket repo (not an arbitrary local folder), a token was captured for
-  // it, and there's something generated to push.
+  const sourceIsCodeCommit = Boolean(analysis.sourceTarget && isCodeCommitUrl(analysis.sourceTarget));
+
+  // The publish button only makes sense when the source was a real repo
+  // and there's something generated to push. A token is required for
+  // GitHub/GitLab/Bitbucket, but NOT for CodeCommit -- that provider
+  // authenticates via the agent's own .env credentials instead, so no
+  // per-session token is ever set for it.
   const canPublishToGithub =
     analysis.sourceType === 'repo' &&
     Boolean(analysis.sourceTarget) &&
-    Boolean(analysis.githubToken) &&
+    (sourceIsCodeCommit || Boolean(analysis.githubToken)) &&
     generated.length > 0;
 
   return (
@@ -534,7 +547,7 @@ export default function AnalyzePage() {
       {canPublishToGithub && (
         <PublishToGithubButton
           repoUrl={analysis.sourceTarget as string}
-          githubToken={analysis.githubToken as string}
+          githubToken={analysis.githubToken}
           files={generated.map((g) => ({ relativePath: g.relativePath, content: g.content }))}
         />
       )}

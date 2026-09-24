@@ -28,6 +28,16 @@ const capabilities = [
 
 const supported = ['JavaScript', 'TypeScript', 'React', 'Next.js', 'Jest'];
 
+// AWS CodeCommit hostnames are region-specific, e.g.
+// git-codecommit.us-east-1.amazonaws.com -- matched separately from the
+// fixed GitHub/GitLab/Bitbucket list below.
+const CODECOMMIT_HOST_PATTERN = /^https?:\/\/git-codecommit\.[a-z0-9-]+\.amazonaws\.com\/.+/i;
+const REPO_URL_PATTERN = /^https?:\/\/(github\.com|gitlab\.com|bitbucket\.org|git-codecommit\.[a-z0-9-]+\.amazonaws\.com)\/.+/i;
+
+function isCodeCommitUrl(url: string) {
+  return CODECOMMIT_HOST_PATTERN.test(url.trim());
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const reduceMotion = useReducedMotion();
@@ -39,6 +49,7 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   const target = tab === 'local' ? localPath.trim() : repoUrl.trim();
+  const targetIsCodeCommit = tab === 'repo' && isCodeCommitUrl(target);
 
   async function handleAnalyze(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -50,13 +61,16 @@ export default function DashboardPage() {
     }
 
     if (tab === 'repo') {
-      const validRepo = /^https?:\/\/(github\.com|gitlab\.com|bitbucket\.org)\/.+/i.test(target);
+      const validRepo = REPO_URL_PATTERN.test(target);
       if (!validRepo) {
-        setError('Use a valid GitHub, GitLab, or Bitbucket repository URL.');
+        setError('Use a valid GitHub, GitLab, Bitbucket, or AWS CodeCommit repository URL.');
         return;
       }
 
-      if (!githubToken.trim()) {
+      // CodeCommit authenticates via the agent's own .env (IAM Git
+      // credentials), not a per-session token pasted here -- so only
+      // GitHub/GitLab/Bitbucket require this field.
+      if (!targetIsCodeCommit && !githubToken.trim()) {
         setError('Enter your GitHub Personal Access Token to analyze and publish to this repo.');
         return;
       }
@@ -70,27 +84,27 @@ export default function DashboardPage() {
         body: JSON.stringify({
           type: tab,
           target,
-          // Only sent for repo analysis; the backend uses it to clone
-          // (possibly private) repos as the requester, not as a shared
-          // server-side identity. Never persisted server-side.
-          githubToken: tab === 'repo' ? githubToken.trim() : undefined,
+          // Only meaningful for GitHub/GitLab/Bitbucket -- the backend
+          // ignores this for CodeCommit URLs and uses its own .env
+          // credentials instead. Never persisted server-side.
+          githubToken: tab === 'repo' && !targetIsCodeCommit ? githubToken.trim() : undefined,
         }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Analysis failed.');
 
-      // Carry forward what was analyzed AND the token used, so the
-      // /analyze page can later publish back to the same repo as the
-      // same person, without asking them to paste the token twice.
-      // sessionStorage is per-browser-tab and cleared on close -- the
-      // token never touches any server-side file.
+      // Carry forward what was analyzed AND the token used (if any), so the
+      // /analyze page can later publish back to the same repo as the same
+      // person, without asking them to paste the token twice. sessionStorage
+      // is per-browser-tab and cleared on close -- the token never touches
+      // any server-side file.
       sessionStorage.setItem(
         'lastAnalysis',
         JSON.stringify({
           ...data,
           sourceType: tab,
           sourceTarget: target,
-          githubToken: tab === 'repo' ? githubToken.trim() : undefined,
+          githubToken: tab === 'repo' && !targetIsCodeCommit ? githubToken.trim() : undefined,
         })
       );
       router.push('/analyze');
@@ -177,7 +191,7 @@ export default function DashboardPage() {
             onClick={() => { setTab('repo'); setError(null); }}
           >
             <Github size={17} />
-            <span><strong>Repository URL</strong><small>Clone GitHub, GitLab, or Bitbucket</small></span>
+            <span><strong>Repository URL</strong><small>GitHub, GitLab, Bitbucket, or CodeCommit</small></span>
           </button>
         </div>
 
@@ -203,7 +217,14 @@ export default function DashboardPage() {
               : 'The agent creates a temporary workspace and analyzes the repository locally.'}
           </p>
 
-          {tab === 'repo' && (
+          {tab === 'repo' && targetIsCodeCommit && (
+            <p className="input-hint" style={{ marginTop: '0.5rem' }}>
+              AWS CodeCommit detected — this uses the IAM Git credentials configured on the agent's own
+              .env file, so no token is needed here.
+            </p>
+          )}
+
+          {tab === 'repo' && !targetIsCodeCommit && (
             <>
               <label htmlFor="github-token" className="input-label" style={{ marginTop: '1rem' }}>
                 Your GitHub Personal Access Token
